@@ -39,6 +39,22 @@
   }
 
   /**
+   * 按需加载 mermaid（体积 3.2MB，仅当真正需要渲染图表时才注入，避免首屏卡顿）
+   * @returns {Promise<boolean>} 是否加载成功
+   */
+  var _mermaidLoading = null;
+  function loadMermaid() {
+    if (typeof window.mermaid !== 'undefined') return Promise.resolve(true);
+    if (typeof window.loadScriptOnce !== 'function') return Promise.resolve(false);
+    if (!_mermaidLoading) {
+      _mermaidLoading = window.loadScriptOnce('js/vendor/mermaid.min.js?v=20260723d', {
+        verify: function () { return typeof window.mermaid !== 'undefined'; }
+      }).then(function () { return true; }).catch(function () { _mermaidLoading = null; return false; });
+    }
+    return _mermaidLoading;
+  }
+
+  /**
    * 渲染单张 mermaid 图表
    * @param {string} containerId 容器元素 id
    * @param {string} code mermaid 文本
@@ -51,11 +67,18 @@
       console.warn('[DiagramRenderer] 容器不存在:', containerId);
       return Promise.resolve(null);
     }
-    if (!ensureInit()) {
-      container.innerHTML = '<p style="color:var(--text-muted);text-align:center;padding:24px;">图表组件未加载</p>';
-      return Promise.resolve(null);
-    }
     opts = opts || {};
+    // mermaid 未就绪时先按需注入，再走完整渲染流程
+    return loadMermaid().then(function (ok) {
+      if (!ok || !ensureInit()) {
+        container.innerHTML = '<p style="color:var(--text-muted);text-align:center;padding:24px;">图表组件未加载</p>';
+        return null;
+      }
+      return renderWithMermaid(container, code, opts);
+    });
+  }
+
+  function renderWithMermaid(container, code, opts) {
     var theme = opts.theme || 'default';
     var diagramId = 'mmd-' + (++_seq);
 
@@ -127,24 +150,27 @@
    */
   function renderAll(selector) {
     selector = selector || '.mermaid, pre[data-mermaid]';
-    if (!ensureInit()) return Promise.resolve([]);
-    var nodes = document.querySelectorAll(selector);
-    var promises = [];
-    nodes.forEach(function (node, idx) {
-      var id = node.id || ('mmd-auto-' + idx);
-      node.id = id;
-      var code = node.getAttribute('data-mermaid-code') || node.textContent || '';
-      if (node.tagName === 'PRE') {
-        // 替换为 div 容器
-        var div = document.createElement('div');
-        div.id = id;
-        div.className = 'mermaid-rendered';
-        node.parentNode.replaceChild(div, node);
-        node = div;
-      }
-      promises.push(render(id, code));
+    // 批量渲染前同样先按需加载 mermaid
+    return loadMermaid().then(function (ok) {
+      if (!ok || !ensureInit()) return [];
+      var nodes = document.querySelectorAll(selector);
+      var promises = [];
+      nodes.forEach(function (node, idx) {
+        var id = node.id || ('mmd-auto-' + idx);
+        node.id = id;
+        var code = node.getAttribute('data-mermaid-code') || node.textContent || '';
+        if (node.tagName === 'PRE') {
+          // 替换为 div 容器
+          var div = document.createElement('div');
+          div.id = id;
+          div.className = 'mermaid-rendered';
+          node.parentNode.replaceChild(div, node);
+          node = div;
+        }
+        promises.push(render(id, code));
+      });
+      return Promise.all(promises);
     });
-    return Promise.all(promises);
   }
 
   /**

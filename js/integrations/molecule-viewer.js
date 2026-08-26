@@ -39,11 +39,35 @@
     container.innerHTML = '';
   }
 
+  var _3dmolLoading = null;
+  /**
+   * 按需加载 3Dmol.js（约 500KB，仅首次打开 3D 分子查看器时注入），避免首屏卡顿
+   * @returns {Promise<boolean>}
+   */
+  function load3Dmol() {
+    if (typeof window.$3Dmol !== 'undefined') return Promise.resolve(true);
+    if (typeof window.loadScriptOnce !== 'function') return Promise.resolve(false);
+    if (!_3dmolLoading) {
+      _3dmolLoading = window.loadScriptOnce('js/vendor/3Dmol-min.js?v=20260723d', {
+        verify: function () { return typeof window.$3Dmol !== 'undefined'; }
+      }).then(function () { return true; }).catch(function () { _3dmolLoading = null; return false; });
+    }
+    return _3dmolLoading;
+  }
+
   function render(containerId, pdbData, opts) {
     if (typeof window.$3Dmol === 'undefined') {
-      console.warn('[MoleculeViewer] 3Dmol.js 未加载');
-      var el = document.getElementById(containerId);
-      if (el) el.innerHTML = '<p style="color:var(--text-muted);text-align:center;padding:40px;">3D 分子查看器未加载</p>';
+      // 首次使用 3Dmol 时按需注入，加载完成后重试渲染当前容器
+      var pendingEl = document.getElementById(containerId);
+      if (pendingEl) pendingEl.innerHTML = '<p style="color:var(--text-muted);text-align:center;padding:40px;">正在加载 3D 分子查看器…</p>';
+      load3Dmol().then(function (ok) {
+        if (!ok) {
+          var failEl = document.getElementById(containerId);
+          if (failEl) failEl.innerHTML = '<p style="color:var(--color-error);text-align:center;padding:40px;">3D 分子查看器加载失败，请检查网络后重试</p>';
+          return;
+        }
+        render(containerId, pdbData, opts);
+      });
       return null;
     }
     var container = document.getElementById(containerId);
