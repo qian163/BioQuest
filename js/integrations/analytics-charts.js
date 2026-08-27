@@ -7,13 +7,25 @@
   'use strict';
 
   var _instances = {};  // id -> Chart 实例
+  var _chartLoading = null;
 
   function ensureChart() {
-    if (typeof window.Chart === 'undefined') {
-      console.warn('[AnalyticsCharts] Chart.js 未加载');
-      return false;
+    return typeof window.Chart !== 'undefined';
+  }
+
+  /**
+   * P2-4：Chart.js（约 200KB）不再首屏加载，首次渲染图表时按需注入
+   * @returns {Promise<boolean>}
+   */
+  function ensureChartAsync() {
+    if (ensureChart()) return Promise.resolve(true);
+    if (typeof window.loadScriptOnce !== 'function') return Promise.resolve(false);
+    if (!_chartLoading) {
+      _chartLoading = window.loadScriptOnce('js/vendor/chart.umd.min.js?v=20260723d', {
+        verify: function () { return typeof window.Chart !== 'undefined'; }
+      }).then(function () { return true; }).catch(function () { _chartLoading = null; return false; });
     }
-    return true;
+    return _chartLoading;
   }
 
   // 主题色板（生物主题）
@@ -93,6 +105,20 @@
   }
 
   /**
+   * P2-4：Charts.js 懒加载完成后的重试入口
+   */
+  function deferUntilChartReady(fn, args) {
+    ensureChartAsync().then(function (ok) {
+      if (!ok) {
+        console.warn('[AnalyticsCharts] Chart.js 加载失败，图表未渲染');
+        return;
+      }
+      setGlobalDefaults();
+      try { fn.apply(null, args); } catch (e) { console.error('[AnalyticsCharts] 渲染重试失败:', e); }
+    });
+  }
+
+  /**
    * 渲染折线图
    * @param {string} containerId
    * @param {Array<string>} labels X 轴标签
@@ -100,7 +126,7 @@
    * @param {object} opts
    */
   function renderLine(containerId, labels, datasets, opts) {
-    if (!ensureChart()) return null;
+    if (!ensureChart()) { deferUntilChartReady(renderLine, Array.prototype.slice.call(arguments)); return null; }
     var ctx = getCtx(containerId);
     if (!ctx) return null;
     destroy(containerId);
@@ -127,7 +153,7 @@
    * 渲染雷达图（能力诊断）
    */
   function renderRadar(containerId, labels, data, opts) {
-    if (!ensureChart()) return null;
+    if (!ensureChart()) { deferUntilChartReady(renderRadar, Array.prototype.slice.call(arguments)); return null; }
     var ctx = getCtx(containerId);
     if (!ctx) return null;
     destroy(containerId);
@@ -163,7 +189,7 @@
    * 渲染柱状图
    */
   function renderBar(containerId, labels, datasets, opts) {
-    if (!ensureChart()) return null;
+    if (!ensureChart()) { deferUntilChartReady(renderBar, Array.prototype.slice.call(arguments)); return null; }
     var ctx = getCtx(containerId);
     if (!ctx) return null;
     destroy(containerId);
@@ -190,7 +216,7 @@
    * 渲染环形图
    */
   function renderDoughnut(containerId, labels, data, opts) {
-    if (!ensureChart()) return null;
+    if (!ensureChart()) { deferUntilChartReady(renderDoughnut, Array.prototype.slice.call(arguments)); return null; }
     var ctx = getCtx(containerId);
     if (!ctx) return null;
     destroy(containerId);

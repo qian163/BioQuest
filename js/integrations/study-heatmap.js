@@ -7,10 +7,31 @@
   'use strict';
 
   var _instances = {};  // containerId -> { cal, destroy }
+  var _depsLoading = null;
 
   function ensureLoaded() {
     return typeof window !== 'undefined' &&
       typeof window.CalHeatmap !== 'undefined';
+  }
+
+  /**
+   * P2-4：cal-heatmap 与其依赖 d3 不再首屏加载，首次挂载热力图时按需注入
+   * （cal-heatmap 4.x 依赖 d3-selection/color/fetch，必须先于 cal-heatmap 加载）
+   * @returns {Promise<boolean>}
+   */
+  function loadDeps() {
+    if (ensureLoaded()) return Promise.resolve(true);
+    if (typeof window.loadScriptOnce !== 'function') return Promise.resolve(false);
+    if (!_depsLoading) {
+      _depsLoading = window.loadScriptOnce('js/vendor/d3.min.js?v=20260723d', {
+        verify: function () { return typeof window.d3 !== 'undefined'; }
+      }).then(function () {
+        return window.loadScriptOnce('js/vendor/cal-heatmap.min.js?v=20260723d', {
+          verify: function () { return typeof window.CalHeatmap !== 'undefined'; }
+        });
+      }).then(function () { return true; }).catch(function () { _depsLoading = null; return false; });
+    }
+    return _depsLoading;
   }
 
   /**
@@ -27,8 +48,16 @@
       return null;
     }
     if (!ensureLoaded()) {
-      console.warn('[StudyHeatmap] cal-heatmap 未加载');
-      container.innerHTML = '<p style="color:var(--text-muted);text-align:center;padding:24px;">学习热力图组件未加载</p>';
+      // cal-heatmap 未就绪：先按需加载依赖（d3 → cal-heatmap），完成后重试挂载
+      container.innerHTML = '<p style="color:var(--text-muted);text-align:center;padding:24px;">正在加载热力图组件…</p>';
+      loadDeps().then(function (ok) {
+        if (!ok) {
+          var el = document.getElementById(containerId);
+          if (el) el.innerHTML = '<p style="color:var(--color-error);text-align:center;padding:24px;">热力图组件加载失败，请检查网络</p>';
+          return;
+        }
+        mount(containerId, data, opts);
+      });
       return null;
     }
 

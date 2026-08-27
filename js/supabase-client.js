@@ -5,9 +5,11 @@
  * ============================================================
  */
 
-// Supabase 配置
-var SUPABASE_URL = 'https://qxehkfucvmxuojjkdaqy.supabase.co';
-var SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF4ZWhrZnVjdm14dW9qamtkYXF5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY2MjU2ODUsImV4cCI6MjEwMjIwMTY4NX0.lbiJxhFvy0t_J4qSeoP6K0r53M4KaEDSKkRlZu03ze8';
+// Supabase 配置（P2-10：端点统一从 js/config.js 的 window.BIOQUEST_CONFIG 读取；
+// 保持旧默认值兜底，保证 config.js 未加载或环境注入覆盖时行为一致）
+var _sbCfg = (typeof window !== 'undefined' && window.BIOQUEST_CONFIG) || {};
+var SUPABASE_URL = _sbCfg.supabaseUrl || 'https://qxehkfucvmxuojjkdaqy.supabase.co';
+var SUPABASE_ANON_KEY = _sbCfg.supabaseAnonKey || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF4ZWhrZnVjdm14dW9qamtkYXF5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY2MjU2ODUsImV4cCI6MjEwMjIwMTY4NX0.lbiJxhFvy0t_J4qSeoP6K0r53M4KaEDSKkRlZu03ze8';
 
 // 初始化 Supabase 客户端
 var _supabase = null;

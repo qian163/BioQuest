@@ -5,8 +5,10 @@
 (function() {
   'use strict';
 
-  var SUPABASE_URL = 'https://qxehkfucvmxuojjkdaqy.supabase.co';
-  var SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF4ZWhrZnVjdm14dW9qamtkYXF5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY2MjU2ODUsImV4cCI6MjEwMjIwMTY4NX0.lbiJxhFvy0t_J4qSeoP6K0r53M4KaEDSKkRlZu03ze8';
+  // P2-10：Supabase 端点从 config.js 统一读取（保留旧默认值兜底）
+  var _sbCfg = (typeof window !== 'undefined' && window.BIOQUEST_CONFIG) || {};
+  var SUPABASE_URL = _sbCfg.supabaseUrl || 'https://qxehkfucvmxuojjkdaqy.supabase.co';
+  var SUPABASE_ANON_KEY = _sbCfg.supabaseAnonKey || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF4ZWhrZnVjdm14dW9qamtkYXF5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY2MjU2ODUsImV4cCI6MjEwMjIwMTY4NX0.lbiJxhFvy0t_J4qSeoP6K0r53M4KaEDSKkRlZu03ze8';
 
   var LOCAL_SAMPLE_QUESTIONS = [
     {

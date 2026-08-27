@@ -8,6 +8,8 @@
     "test:smoke": "node tests/wiki-smoke-test.cjs",
     "test:e2e": "node tests/e2e-smoke.js",
     "test:anchor": "node scripts/verify-manifest-anchor.js",
+    "verify:rls": "node scripts/verify-rls-policies.js",
+    "verify:sql-idem": "node scripts/verify-sql-idempotency.js",
     "lint:js": "git ls-files 'js/*.js' 'tests/*.js' 'tests/*.cjs' | xargs -n1 node --check",
     "bump:sw": "node scripts/bump-sw.js"
   },

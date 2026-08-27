@@ -8,8 +8,10 @@
 (function () {
   'use strict';
 
-  // 知识库 ID（从 .env 注入，由 server.py 读取并注入到前端）
-  var METASO_SUBJECT_ID = '2045811707737636864';
+  // P2-10：知识库 ID 从集中配置读取（js/config.js → window.BIOQUEST_CONFIG），
+  // 不再硬编码在模块源码；服务端可通过注入 window.__BIOQUEST_CONFIG__ 覆盖。
+  var METASO_SUBJECT_ID = (typeof window !== 'undefined' && window.BIOQUEST_CONFIG &&
+    window.BIOQUEST_CONFIG.metasoSubjectId) || null;
 
   // 服务商 → base_url + 默认模型
   var PROVIDER_MAP = {

@@ -58,6 +58,16 @@ jobs:
         # bioid-map 迁移映射校验因 #150 更换数据体系 / 删除 bioid-map 而移除。）
         run: node scripts/verify-bio-shards.js
 
+      - name: RLS 策略静态审计（P2-9）
+        # 防回归：凡 sql/*.sql 中 CREATE TABLE 的表必须启用 RLS 且至少含一条
+        # CREATE POLICY，缺一即 FAIL。生产库实时校验见 tools/python/check-rls-policies.py。
+        run: npm run verify:rls
+
+      - name: SQL migration 幂等性审计（P2-38）
+        # 防回归：捕获 CREATE POLICY IF NOT EXISTS（PG15 语法错误）、
+        # 裸 CREATE VIEW / CREATE TRIGGER（重跑会报"已存在"）等非幂等模式。
+        run: npm run verify:sql-idem
+
       - name: 单元测试（IRT / FSRS / 调度器 + 覆盖率门禁）
         # #140/#141：--coverage 已并入 test:unit；低于 jest.config.cjs
         # coverageThreshold 的任何指标都会使本步骤失败（防覆盖率回退）

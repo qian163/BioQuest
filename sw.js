@@ -86,10 +86,17 @@ var WARMUP_PHASE_1 = [
   './js/micro-details.js'
 ];
 
-// 预热阶段 2：重型功能（quiz/exam/practice 等运行时库 + 数据）
-// 注意：quiz_*.json 很大 (~900KB total)，放在最后一批；即便失败也不影响使用
+// 预热阶段 2（P2-13）：仅保留高频路由的 JS，剔除低频/已移除模块与大数据文件
+// ------------------------------------------------------------------------
+// 旧方案把全部路由 JS + ~900KB quiz JSON 一次性预取，浪费带宽且拖慢主资源下载；
+// 新方案遵循"按使用渐进预热"：
+//   - 只 eager 预热高频路由（学习主链路 + 社交/资料页）的核心模块；
+//   - 低频模块（photo-quiz/bounty/teacher/classroom 等）与数据 JSON 一律
+//     首次访问时由 fetch 拦截器自然落缓存（见策略 2/3 的"缓存优先，网络更新"），
+//     离线可用性不受影响——只要用户曾访问过该路由即可离线重访；
+//   - 存在 data-saver / 2G 弱网时直接跳过本阶段（见 warmupCache）。
 var WARMUP_PHASE_2 = [
-  // 路由核心
+  // 学习主链路路由核心
   './js/quiz.js',
   './js/practice.js',
   './js/exam.js',
@@ -97,54 +104,26 @@ var WARMUP_PHASE_2 = [
   './js/cards.js',
   './js/study.js',
   './js/review.js',
-  './js/review-deep.js',
   './js/wrongbook.js',
-  './js/daily-question.js',
   './js/habits.js',
-  './js/knowledge-graph.js',
-  './js/ai-diagnostic-engine.js',
-  './js/smart-diagnosis.js',
+  './js/daily-question.js',
+  // 登录/数据同步（全局依赖，几乎必用）
   './js/storage.js',
   './js/supabase-client.js',
   './js/supabase.js',
+  // 内容/社区路由
   './js/resources.js',
   './js/ebook.js',
-  './js/trends.js',
   './js/discussion.js',
   './js/user.js',
   './js/community.js',
-  './js/bounty.js',
-  './js/bio-lab.js',
-  './js/bio-animation.js',
-  './js/phet-sims.js',
-  './js/photo-quiz.js',
-  './js/biology-history.js',
-  './js/tutor.js',
-  './js/teacher.js',
-  './js/classroom.js',
-  './js/classroom-player.js',
+  // 核心引擎（Tier1 首屏模块，预热保证离线秒开）
   './js/fsrs-algorithm.js',
   './js/fsrs-optimizer.js',
   './js/irt-engine.js',
   './js/event-bus.js',
   './js/a11y-utils.js',
-  './js/classmate.js',
-  './js/mood-tracker.js',
-  './js/learning-dna.js',
-  './js/whiteboard.js',
-  './js/multi-agent.js',
-  './js/ai-client.js',
-  './js/tts.js',
-  // 数据（按需也能加载，预热只是让首次 quiz 更快）
-  './data/quiz.json',
-  './data/quiz_m1.json',
-  './data/quiz_m2.json',
-  './data/quiz_m3.json',
-  './data/quiz_m4.json',
-  './data/resources.json',
-  './data/knowledge-graph.json',
-  './data/logic_questions.json',
-  './data/community.json'
+  './js/ai-client.js'
 ];
 
 // 这些"很重"的文件不做 install 预缓存，避免首次注册 SW 时 install 超时
@@ -174,8 +153,16 @@ var NEVER_PRECACHE = [
  */
 function warmupCache() {
   caches.open(CACHE_NAME).then(function (cache) {
-    // 逐个批次串行，批内允许有限并发
-    var batches = [WARMUP_PHASE_1, WARMUP_PHASE_2];
+    // P2-13：data-saver / 2G 弱网用户跳过阶段 2（阶段 1 全是小文件保留）——
+    // 不替用户提前消耗流量，低频资源首次使用时再缓存。
+    var phases = [WARMUP_PHASE_1, WARMUP_PHASE_2];
+    if ((typeof navigator !== 'undefined' && navigator.connection &&
+         navigator.connection.saveData) ||
+        (typeof navigator !== 'undefined' && navigator.connection &&
+         /^(slow-2g|2g)$/.test(navigator.connection.effectiveType || ''))) {
+      phases = [WARMUP_PHASE_1];
+    }
+    var batches = phases;
     var batchIdx = 0;
     function nextBatch() {
       if (batchIdx >= batches.length) return;

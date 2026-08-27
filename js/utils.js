@@ -1139,3 +1139,222 @@ function timeAgo(date) {
 
   return `${Math.floor(days / 365)} 年前`;
 }
+
+/* ========================================================================
+ * P2-2：事件监听器统一注册表
+ * ------------------------------------------------------------------------
+ * 目的：收口所有 DOM addEventListener 的挂载点——自动去重（同 scope+target+
+ * type+handler 只挂一次，修复"DOMContentLoaded 与已 ready 兜底双路径"导致
+ * 的双触发/泄漏）、支持按 scope 一键解绑（组件/路由销毁时清理）。
+ * 用法：
+ *   var off = BioQuest.listen('keydown', handler, { scope: 'cards' }); // 绑定 document
+ *   var off2 = BioQuest.listen.add(document, 'click', h, { scope: 'x' });
+ *   off();                                   // 精确解除
+ *   BioQuest.listen.removeAll('x');          // 按 scope 批量解除
+ *   BioQuest.listen.count();                 // 当前存活监听数（调试）
+ * 注意：同一 handler 若需要监听不同的 target/type（如 window resize + document
+ * keydown），scope 应保持一致，target/type 不同不会去重。
+ * ======================================================================== */
+(function () {
+  'use strict';
+  if (typeof window === 'undefined') return;
+  if (BioQuest.listen) return;
+
+  var entries = []; // {scope, target, type, handler, opts}
+
+  function add(target, type, handler, opts) {
+    opts = opts || {};
+    var scope = opts.scope || '_default';
+    // 自动去重：同一作用域 + 目标 + 事件 + 处理器只挂载一次
+    for (var i = 0; i < entries.length; i++) {
+      var e = entries[i];
+      if (e.scope === scope && e.target === target && e.type === type && e.handler === handler) {
+        return e.off;
+      }
+    }
+    try { target.addEventListener(type, handler, opts); } catch (err) {
+      console.warn('[listen] addEventListener 失败:', type, err && err.message);
+      return function () {};
+    }
+    var rec = { scope: scope, target: target, type: type, handler: handler, opts: opts };
+    var off = function () {
+      var idx = entries.indexOf(rec);
+      if (idx >= 0) entries.splice(idx, 1);
+      try { target.removeEventListener(type, handler, opts); } catch (err) {}
+    };
+    rec.off = off;
+    entries.push(rec);
+    return off;
+  }
+
+  // 快捷方式：默认绑定 document
+  function doc(type, handler, opts) {
+    if (typeof document === 'undefined') return function () {};
+    return add(document, type, handler, opts);
+  }
+
+  function removeAll(scope) {
+    for (var i = entries.length - 1; i >= 0; i--) {
+      if (entries[i].scope === scope) entries[i].off();
+    }
+  }
+
+  function count() { return entries.length; }
+
+  BioQuest.listen = {
+    add: add,
+    on: doc,        // 默认 document 的等价写法
+    removeAll: removeAll,
+    count: count
+  };
+})();
+
+/* ========================================================================
+ * P2-8：localStorage 存储工具（数据完整性校验 + 压缩）
+ * ------------------------------------------------------------------------
+ * 现有模块大量裸用 localStorage.setItem(JSON.stringify(...)) / getItem(parse)，
+ * 存在两个问题：
+ *   1) 无校验：历史脏数据/被截断的 JSON 会让 JSON.parse 抛错，页面白屏；
+ *   2) 无压缩：习惯日志/错题/练习记录等数组越写越大，逼近 ~5MB 配额。
+ * 本模块提供 BioQuest.storage：
+ *   - set(key, value)：JSON 序列化；超过 sizeThreshold（默认 4KB）且浏览器支持
+ *     CompressionStream 时用 gzip 压缩，存储为 {v:1,z:1,b64:...} 信封；
+ *   - get(key, def, validate)：读取时兼容普通 JSON 与压缩信封，解析失败或被
+ *     validate 校验拒绝时返回 def（不抛错、不白屏）；
+ *   - remove(key)。
+ * 对已存在的旧数据（纯 JSON 明文）完全兼容，逐模块迁移即可避险。
+ * ======================================================================== */
+(function () {
+  'use strict';
+  if (typeof window === 'undefined') return;
+  if (BioQuest.storage) return;
+
+  var SIZE_THRESHOLD = 4096; // 超过 4KB 的载荷才压缩
+
+  function _b64Encode(uint8) {
+    var bin = '';
+    var chunk = 0x8000;
+    for (var i = 0; i < uint8.length; i += chunk) {
+      bin += String.fromCharCode.apply(null, uint8.subarray(i, i + chunk));
+    }
+    return btoa(bin);
+  }
+
+  function _b64Decode(b64) {
+    var bin = atob(b64);
+    var bytes = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return bytes;
+  }
+
+  // 轻量校验和：FNV-1a 32bit，用于压缩信封的完整性检测（非加密用途）
+  function _fnv1a(str) {
+    var h = 0x811c9dc5;
+    for (var i = 0; i < str.length; i++) {
+      h ^= str.charCodeAt(i);
+      h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
+    }
+    return h.toString(16);
+  }
+
+  function _compressSupported() {
+    return typeof window.CompressionStream === 'function' &&
+      typeof TextEncoder === 'function' && typeof TextDecoder === 'function';
+  }
+
+  function _gzipCompress(text) {
+    var stream = new window.CompressionStream('gzip');
+    var writer = stream.writable.getWriter();
+    writer.write(new TextEncoder().encode(text));
+    writer.close();
+    return new window.Response(stream.readable).arrayBuffer();
+  }
+
+  function _gzipDecompress(bytes) {
+    var stream = new window.DecompressionStream('gzip');
+    var writer = stream.writable.getWriter();
+    writer.write(bytes);
+    writer.close();
+    return new window.Response(stream.readable).arrayBuffer();
+  }
+
+  function set(key, value) {
+    if (typeof localStorage === 'undefined') return;
+    try {
+      var json = JSON.stringify(value);
+      if (json.length >= SIZE_THRESHOLD && _compressSupported()) {
+        // 压缩信封：{v:版本, z:压缩标记, h:校验和, b64:gzip(base64)}
+        _gzipCompress(json).then(function (buf) {
+          var b64 = _b64Encode(new Uint8Array(buf));
+          var envelope = { v: 1, z: 1, h: _fnv1a(json), b64: b64 };
+          try { localStorage.setItem(key, JSON.stringify(envelope)); } catch (e) {}
+        }).catch(function () {
+          // 压缩失败（如后台强杀）回退明文，保证数据不丢
+          try { localStorage.setItem(key, json); } catch (e) {}
+        });
+        return;
+      }
+      localStorage.setItem(key, json);
+    } catch (e) {} // 配额满等异常静默降级
+  }
+
+  function get(key, def, validate) {
+    if (typeof localStorage === 'undefined') return def;
+    var raw = null;
+    try { raw = localStorage.getItem(key); } catch (e) { return def; }
+    if (raw == null) return def;
+
+    var parsed = null;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (e) {
+      // 明文 JSON 解析失败：仅当看起来像压缩信封（以 { 开头）才尝试恢复，
+      // 其余视为损坏数据，静默回退默认值
+      if (raw && raw.charAt(0) !== '{') return def;
+      parsed = null;
+    }
+    if (parsed === null) return def;
+
+    if (parsed && parsed.z === 1) {
+      // 压缩信封：异步解压
+      var p = Promise.resolve();
+      try {
+        p = _gzipDecompress(_b64Decode(parsed.b64)).then(function (buf) {
+          var text = new TextDecoder().decode(buf);
+          // 校验和一致才算完整数据；不一致说明写坏/被截断，丢弃
+          if (parsed.h && _fnv1a(text) !== parsed.h) return def;
+          var obj = JSON.parse(text);
+          if (typeof validate === 'function') return validate(obj) ? obj : def;
+          return obj;
+        }).catch(function () { return def; });
+      } catch (e) { return def; }
+      return p; // Note: 返回 Promise，调用方需 await（或使用 getAsync）
+    }
+
+    // 明文对象：同步返回
+    if (typeof validate === 'function') {
+      try { return validate(parsed) ? parsed : def; } catch (e) { return def; }
+    }
+    return parsed;
+  }
+
+  // 异步读取：压缩信封需要解压，返回 Promise；明文数据 resolve 原值
+  function getAsync(key, def, validate) {
+    var res = get(key, def, validate);
+    if (res && typeof res.then === 'function') return res;
+    return Promise.resolve(res);
+  }
+
+  function remove(key) {
+    if (typeof localStorage === 'undefined') return;
+    try { localStorage.removeItem(key); } catch (e) {}
+  }
+
+  BioQuest.storage = {
+    set: set,
+    get: get,
+    getAsync: getAsync,
+    remove: remove,
+    SIZE_THRESHOLD: SIZE_THRESHOLD
+  };
+})();
