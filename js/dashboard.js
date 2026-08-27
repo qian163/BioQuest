@@ -649,9 +649,18 @@ function _getGreeting() {
  */
 function _getUserStats() {
   try {
-    var raw = localStorage.getItem('bioquest_stats');
-    if (!raw) return { totalAnswered: 0, totalCorrect: 0, modules: {} };
-    var stats = JSON.parse(raw);
+    // P2-8：带结构校验读取——历史脏数据/截断 JSON 回退默认值，不抛错
+    var stats;
+    if (typeof window !== 'undefined' && window.BioQuest && window.BioQuest.storage) {
+      stats = BioQuest.storage.get('bioquest_stats', null, function (v) {
+        return v && typeof v === 'object' && !Array.isArray(v);
+      });
+      if (stats == null) return { totalAnswered: 0, totalCorrect: 0, modules: {} };
+    } else {
+      var raw = localStorage.getItem('bioquest_stats');
+      if (!raw) return { totalAnswered: 0, totalCorrect: 0, modules: {} };
+      stats = JSON.parse(raw);
+    }
     return {
       totalAnswered: stats.totalAnswered || 0,
       totalCorrect: stats.totalCorrect || 0,
@@ -769,9 +778,15 @@ function _getTrendData(days) {
  */
 function _getStreak() {
   try {
-    var raw = localStorage.getItem('bioquest_habit_logs');
-    if (!raw) return 0;
-    var logs = JSON.parse(raw);
+    // P2-8：带结构校验读取
+    var logs;
+    if (typeof window !== 'undefined' && window.BioQuest && window.BioQuest.storage) {
+      logs = BioQuest.storage.get('bioquest_habit_logs', [], Array.isArray) || [];
+    } else {
+      var raw = localStorage.getItem('bioquest_habit_logs');
+      if (!raw) return 0;
+      logs = JSON.parse(raw);
+    }
     if (!Array.isArray(logs)) return 0;
     // 收集所有完成打卡的日期集合
     var completedDates = {};

@@ -16,6 +16,21 @@ var _supabase = null;
 var _currentUser = null;
 
 /**
+ * P2-16：网络类写失败入队（由 js/offline-queue.js 在恢复联网后自动重放）。
+ * 仅网络类错误入队（业务错误直接忽略，避免无限重试）。
+ * @param {string} type - 回放函数名（window[type] 必须存在）
+ * @param {Array} args - 回放参数（须 JSON 可序列化）
+ * @param {string} [errMsg] - 失败原因，用于判断是否网络错误
+ */
+function queueOfflineWrite(type, args, errMsg) {
+  try {
+    if (window.BioQuest && BioQuest.offlineQueue) {
+      BioQuest.offlineQueue.enqueue(type, args, errMsg);
+    }
+  } catch (e) { /* 队列不可用时静默降级（保持现状：下次重试/期间数据在本地） */ }
+}
+
+/**
  * 获取本地时区日期字符串 YYYY-MM-DD
  * 统一替代 toISOString().split('T')[0]（UTC），避免跨日边界问题
  */
@@ -3376,6 +3391,8 @@ async function syncPracticeRecordToSupabase(record) {
     return { ok: true };
   } catch (e) {
     console.warn('[BioQuest] syncPracticeRecordToSupabase 失败:', e && e.message);
+    // P2-16：网络类失败入队，恢复联网后由 offline-queue 自动重放
+    queueOfflineWrite('syncPracticeRecordToSupabase', [record], e && e.message);
     return { ok: false, error: e && e.message };
   }
 }
@@ -3402,6 +3419,8 @@ async function syncHabitLogToSupabase(dateStr, streakCount) {
     return { ok: true };
   } catch (e) {
     console.warn('[BioQuest] syncHabitLogToSupabase 失败:', e && e.message);
+    // P2-16：网络类失败入队，恢复联网后由 offline-queue 自动重放
+    queueOfflineWrite('syncHabitLogToSupabase', [dateStr, streakCount], e && e.message);
     return { ok: false, error: e && e.message };
   }
 }

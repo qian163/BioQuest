@@ -768,14 +768,29 @@
 
   // ==================== 初始化入口 ====================
 
+  // P2-2：键盘快捷键通过统一监听器注册表挂载——自动去重，避免
+  // "DOMContentLoaded 回调"与"已 ready 兜底"两条路径都 addEventListener
+  // 造成 handleKeydown 被挂载两次（快捷键双触发 + 监听器泄漏）
+  var bindKeydown = function () {
+    if (typeof window !== 'undefined' && window.BioQuest && BioQuest.listen) {
+      return BioQuest.listen.on('keydown', handleKeydown, { scope: 'cards' });
+    }
+    // 兜底：注册表不可用时只挂一次
+    if (!document.__cardsKeydownBound) {
+      document.__cardsKeydownBound = true;
+      document.addEventListener('keydown', handleKeydown);
+    }
+    return function () {};
+  };
+
   document.addEventListener('DOMContentLoaded', function () {
-    document.addEventListener('keydown', handleKeydown);
+    bindKeydown();
     loadData();
   });
 
   // 兼容：如果 DOM 已经 ready
   if (document.readyState === 'interactive' || document.readyState === 'complete') {
-    document.addEventListener('keydown', handleKeydown);
+    bindKeydown();
     loadData();
   }
 

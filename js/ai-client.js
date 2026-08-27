@@ -487,15 +487,27 @@
     return '';
   }
 
-  // 检查每日用量上限
+  // 检查每日用量上限（P2-8：带结构校验，脏数据自动重置）
   function getUsage() {
     try {
-      var raw = localStorage.getItem('bioquest_ai_usage');
-      var data = raw ? JSON.parse(raw) : {};
+      var data;
+      if (typeof window !== 'undefined' && window.BioQuest && window.BioQuest.storage) {
+        data = BioQuest.storage.get('bioquest_ai_usage', null, function (v) {
+          return v && typeof v === 'object' && typeof v.count === 'number';
+        });
+        if (data == null) data = {};
+      } else {
+        var raw = localStorage.getItem('bioquest_ai_usage');
+        data = raw ? JSON.parse(raw) : {};
+      }
       var today = new Date().toISOString().slice(0, 10);
       if (data.date !== today) {
         data = { date: today, count: 0 };
-        localStorage.setItem('bioquest_ai_usage', JSON.stringify(data));
+        if (typeof window !== 'undefined' && window.BioQuest && window.BioQuest.storage) {
+          BioQuest.storage.set('bioquest_ai_usage', data);
+        } else {
+          try { localStorage.setItem('bioquest_ai_usage', JSON.stringify(data)); } catch (e) {}
+        }
       }
       return data;
     } catch (e) { return { date: new Date().toISOString().slice(0, 10), count: 0 }; }
@@ -505,7 +517,13 @@
     var data = getUsage();
     if (data.count >= AI_DAILY_USAGE_LIMIT) return false;
     data.count += 1;
-    try { localStorage.setItem('bioquest_ai_usage', JSON.stringify(data)); } catch (e) {}
+    try {
+      if (typeof window !== 'undefined' && window.BioQuest && window.BioQuest.storage) {
+        BioQuest.storage.set('bioquest_ai_usage', data);
+      } else {
+        localStorage.setItem('bioquest_ai_usage', JSON.stringify(data));
+      }
+    } catch (e) {}
     return true;
   }
 

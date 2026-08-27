@@ -18,6 +18,22 @@
    * 返回 { total: 总答题次数, correct: 正确次数, accuracy: 正确率, baseDifficulty: 原始难度, adjustedDifficulty: 调整后难度 }
    */
   function getQuestionDifficultyStats(questionId) {
+    var defaults = { total: 0, correct: 0, accuracy: 0, baseDifficulty: 3, adjustedDifficulty: 3 };
+    if (typeof window !== 'undefined' && window.BioQuest && window.BioQuest.storage) {
+      // P2-8：带结构校验的读取——历史脏数据/被截断 JSON 不再抛错白屏
+      var allStats = BioQuest.storage.get('bioquest_question_stats', {}, function (v) {
+        return v && typeof v === 'object' && !Array.isArray(v);
+      }) || {};
+      var dkey = String(questionId);
+      if (allStats[dkey]) {
+        defaults.total = allStats[dkey].total || 0;
+        defaults.correct = allStats[dkey].correct || 0;
+        defaults.accuracy = defaults.total > 0 ? defaults.correct / defaults.total : 0;
+        defaults.baseDifficulty = allStats[dkey].baseDifficulty || 3;
+        defaults.adjustedDifficulty = allStats[dkey].adjustedDifficulty || defaults.baseDifficulty;
+      }
+      return defaults;
+    }
     var stats = { total: 0, correct: 0, accuracy: 0, baseDifficulty: 3, adjustedDifficulty: 3 };
     try {
       var raw = localStorage.getItem('bioquest_question_stats');
@@ -44,37 +60,61 @@
     if (!questionId) return;
     var key = String(questionId);
     var baseDiff = (baseDifficulty >= 1 && baseDifficulty <= 5) ? baseDifficulty : 3;
-    try {
-      var raw = localStorage.getItem('bioquest_question_stats');
-      var allStats = raw ? JSON.parse(raw) : {};
 
-      if (!allStats[key]) {
-        allStats[key] = { total: 0, correct: 0, baseDifficulty: baseDiff, adjustedDifficulty: baseDiff };
-      }
+    var allStats;
+    if (typeof window !== 'undefined' && window.BioQuest && window.BioQuest.storage) {
+      // P2-8：带结构校验读取 + 有界写入（防单 key 无上限增长挤爆 5MB 配额）
+      allStats = BioQuest.storage.get('bioquest_question_stats', {}, function (v) {
+        return v && typeof v === 'object' && !Array.isArray(v);
+      }) || {};
+    } else {
+      try {
+        var raw = localStorage.getItem('bioquest_question_stats');
+        allStats = raw ? JSON.parse(raw) : {};
+      } catch (e) { allStats = {}; }
+    }
 
-      allStats[key].total += 1;
-      if (isCorrect) {
-        allStats[key].correct += 1;
-      }
-      allStats[key].baseDifficulty = baseDiff;
+    if (!allStats[key]) {
+      allStats[key] = { total: 0, correct: 0, baseDifficulty: baseDiff, adjustedDifficulty: baseDiff };
+    }
 
-      // 重新计算调整后的难度
-      var total = allStats[key].total;
-      var correct = allStats[key].correct;
-      if (total >= MIN_ANSWERS_FOR_ADJUST) {
-        var accuracy = correct / total;
-        var newDiff = 3; // 默认中等
-        // 正确率越高，难度越低（因为题目对用户来说简单）
-        if (accuracy >= 0.85) newDiff = Math.max(1, baseDiff - 2);
-        else if (accuracy >= 0.70) newDiff = Math.max(1, baseDiff - 1);
-        else if (accuracy >= 0.50) newDiff = baseDiff;
-        else if (accuracy >= 0.30) newDiff = Math.min(5, baseDiff + 1);
-        else newDiff = Math.min(5, baseDiff + 2);
-        allStats[key].adjustedDifficulty = newDiff;
-      }
+    allStats[key].total += 1;
+    if (isCorrect) {
+      allStats[key].correct += 1;
+    }
+    allStats[key].baseDifficulty = baseDiff;
 
-      localStorage.setItem('bioquest_question_stats', JSON.stringify(allStats));
-    } catch (e) { /* 静默 */ }
+    // 重新计算调整后的难度
+    var total = allStats[key].total;
+    var correct = allStats[key].correct;
+    if (total >= MIN_ANSWERS_FOR_ADJUST) {
+      var accuracy = correct / total;
+      var newDiff = 3; // 默认中等
+      // 正确率越高，难度越低（因为题目对用户来说简单）
+      if (accuracy >= 0.85) newDiff = Math.max(1, baseDiff - 2);
+      else if (accuracy >= 0.70) newDiff = Math.max(1, baseDiff - 1);
+      else if (accuracy >= 0.50) newDiff = baseDiff;
+      else if (accuracy >= 0.30) newDiff = Math.min(5, baseDiff + 1);
+      else newDiff = Math.min(5, baseDiff + 2);
+      allStats[key].adjustedDifficulty = newDiff;
+    }
+
+    // P2-8：有界写入——最多跟踪最近 5000 道题的统计，防止无限膨胀
+    var dkeys = Object.keys(allStats);
+    if (dkeys.length > 5000) {
+      var trimmed = {};
+      var keep = dkeys.slice(-5000);
+      for (var ki = 0; ki < keep.length; ki++) trimmed[keep[ki]] = allStats[keep[ki]];
+      allStats = trimmed;
+    }
+
+    if (typeof window !== 'undefined' && window.BioQuest && window.BioQuest.storage) {
+      BioQuest.storage.set('bioquest_question_stats', allStats);
+    } else {
+      try {
+        localStorage.setItem('bioquest_question_stats', JSON.stringify(allStats));
+      } catch (e) { /* 静默 */ }
+    }
   }
 
   /**
@@ -125,8 +165,15 @@
   function getTodayFeedbackCount() {
     try {
       var today = new Date().toISOString().slice(0, 10);
-      var raw = localStorage.getItem('bioquest_question_feedbacks');
-      var all = raw ? JSON.parse(raw) : [];
+      // P2-8：带校验读取（脏数据回退空数组，不抛错）
+      var all = (typeof window !== 'undefined' && window.BioQuest && window.BioQuest.storage)
+        ? (BioQuest.storage.get('bioquest_question_feedbacks', [], Array.isArray) || [])
+        : (function () {
+            try {
+              var r = localStorage.getItem('bioquest_question_feedbacks');
+              return r ? JSON.parse(r) : [];
+            } catch (e) { return []; }
+          })();
       var todayCount = 0;
       for (var i = 0; i < all.length; i++) {
         if (all[i].createdAt && all[i].createdAt.slice(0, 10) === today) {
@@ -191,14 +238,24 @@
     };
 
     try {
-      var raw = localStorage.getItem('bioquest_question_feedbacks');
-      var all = raw ? JSON.parse(raw) : [];
+      var all = (typeof window !== 'undefined' && window.BioQuest && window.BioQuest.storage)
+        ? (BioQuest.storage.get('bioquest_question_feedbacks', [], Array.isArray) || [])
+        : (function () {
+            try {
+              var r = localStorage.getItem('bioquest_question_feedbacks');
+              return r ? JSON.parse(r) : [];
+            } catch (e) { return []; }
+          })();
       all.push(feedback);
       // 只保留最近200条
       if (all.length > 200) {
         all = all.slice(-200);
       }
-      localStorage.setItem('bioquest_question_feedbacks', JSON.stringify(all));
+      if (typeof window !== 'undefined' && window.BioQuest && window.BioQuest.storage) {
+        BioQuest.storage.set('bioquest_question_feedbacks', all);
+      } else {
+        localStorage.setItem('bioquest_question_feedbacks', JSON.stringify(all));
+      }
 
       // 同步到云端（如果有登录）
       if (typeof window.isLoggedIn === 'function' && window.isLoggedIn()) {
@@ -227,8 +284,14 @@
    */
   function getQuestionFeedbacks(questionId) {
     try {
-      var raw = localStorage.getItem('bioquest_question_feedbacks');
-      var all = raw ? JSON.parse(raw) : [];
+      var all = (typeof window !== 'undefined' && window.BioQuest && window.BioQuest.storage)
+        ? (BioQuest.storage.get('bioquest_question_feedbacks', [], Array.isArray) || [])
+        : (function () {
+            try {
+              var r = localStorage.getItem('bioquest_question_feedbacks');
+              return r ? JSON.parse(r) : [];
+            } catch (e) { return []; }
+          })();
       if (questionId) {
         return all.filter(function(f) { return String(f.questionId) === String(questionId); });
       }

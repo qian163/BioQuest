@@ -68,6 +68,11 @@ jobs:
         # 裸 CREATE VIEW / CREATE TRIGGER（重跑会报"已存在"）等非幂等模式。
         run: npm run verify:sql-idem
 
+      - name: 发布资源压缩预算（P2-1）
+        # 防回归：js+css 总体 gzip 后体积超过预算即 FAIL，防止引入大库
+        #（绕过 P2-4 懒加载）导致发布体积失控；人工可核对报告明细。
+        run: npm run build:compress
+
       - name: 单元测试（IRT / FSRS / 调度器 + 覆盖率门禁）
         # #140/#141：--coverage 已并入 test:unit；低于 jest.config.cjs
         # coverageThreshold 的任何指标都会使本步骤失败（防覆盖率回退）

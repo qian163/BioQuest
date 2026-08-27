@@ -265,9 +265,8 @@
     }
   </style>
 
-  <!-- KaTeX：首屏不依赖，异步加载 -->
-  <link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" as="style" data-css-async>
-  <noscript><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css"></noscript>
+  <!-- KaTeX：源码中无业务调用（vendor katex/mhchem/gsap 已于 P2-1/P2-4 清理），
+       移除旧 CDN CSS preload，避免浏览器无谓下载 -->
 
   <!-- 外部 CDN 失败回退状态与工具函数 -->
   <!-- 启动辅助脚本（defer）：Supabase 延迟加载 + data-route 点击委托兜底 -->
@@ -816,6 +815,8 @@
   <script src="js/soundscape.js?v=20260803a" defer></script>
   <script src="js/onboarding.js?v=20260803a" defer></script>
   <script src="js/social-impact.js?v=20260803a" defer></script>
+  <!-- P2-35：生物主题微交互彩蛋（Logo 连点叶瓣飞舞 + 按钮轻触反馈；尊重 reduced-motion） -->
+  <script src="js/micro-interactions.js?v=20260827a" defer></script>
 </head>  <!-- v3.2 OpenMAIC 范式移植：DSL 类型 + Canvas 渲染器 + Action 执行器（封装在 vendor/ 目录） -->
   <script src="vendor/openmaic/openmaic-dsl.js?v=20260712k" defer></script>
   <script src="vendor/openmaic/openmaic-renderer.js?v=20260712k" defer></script>
@@ -847,6 +848,8 @@
   <script src="vendor/openmaic/openmaic-browser-tts.js?v=20260712j" defer></script>
   <!-- 注：AI 课堂模块已移除，首屏由 app.js 控制路由，不再加载 classroom.js/classroom-player.js/runner -->
   <!-- 首页关键模块：由 boot-lazy.js 在 DOMContentLoaded 时加载 hero-sketch；非关键模块由 app.js 延迟加载 -->
+  <!-- P2-16：离线写操作队列（网络恢复后自动重放 sync 类写操作；必须在 supabase-client.js 前加载） -->
+  <script src="js/offline-queue.js?v=20260827a" defer></script>
   <!-- PWA Service Worker 注册（外部化 sw-register.js）：DOMContentLoaded 立即启动，配 6s 硬超时兜底 -->
   <script src="js/sw-register.js?v=20260820a" defer></script>
 </body>

@@ -93,6 +93,12 @@
 
   function loadHistory() {
     try {
+      // P2-8：带结构校验读取——损坏/截断 JSON 回退空数组，不再抛错白屏
+      if (typeof window !== 'undefined' && window.BioQuest && window.BioQuest.storage) {
+        var v = BioQuest.storage.get('bioquest_pomodoro_history', [], Array.isArray);
+        if (Array.isArray(v)) _pomodoroHistory = v;
+        return;
+      }
       var raw = localStorage.getItem('bioquest_pomodoro_history');
       if (raw) _pomodoroHistory = JSON.parse(raw);
     } catch (e) { _pomodoroHistory = []; }
@@ -102,7 +108,11 @@
     try {
       // 只保留最近 100 条
       if (_pomodoroHistory.length > 100) _pomodoroHistory = _pomodoroHistory.slice(-100);
-      localStorage.setItem('bioquest_pomodoro_history', JSON.stringify(_pomodoroHistory));
+      if (typeof window !== 'undefined' && window.BioQuest && window.BioQuest.storage) {
+        BioQuest.storage.set('bioquest_pomodoro_history', _pomodoroHistory);
+      } else {
+        localStorage.setItem('bioquest_pomodoro_history', JSON.stringify(_pomodoroHistory));
+      }
     } catch (e) {}
   }
 
